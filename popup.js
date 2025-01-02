@@ -60,6 +60,33 @@ formatOptions.forEach(option => {
     });
 });
 
+// Add progress handling functions
+function updateProgress(progress) {
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    
+    if (progress === 'indeterminate') {
+        progressBar.removeAttribute('value');
+        progressText.textContent = 'Preparing download...';
+    } else {
+        progressBar.value = progress;
+        progressText.textContent = `Downloading: ${Math.round(progress)}%`;
+    }
+}
+
+function showProgress() {
+    document.getElementById('progressContainer').style.display = 'block';
+    document.getElementById('clipButton').style.display = 'none';
+    updateProgress('indeterminate');
+}
+
+function hideProgress() {
+    document.getElementById('progressContainer').style.display = 'none';
+    document.getElementById('clipButton').style.display = 'block';
+    document.getElementById('progressText').textContent = '';
+}
+
+// Modify the click event listener
 document.getElementById('clipButton').addEventListener('click', async () => {
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -79,9 +106,21 @@ document.getElementById('clipButton').addEventListener('click', async () => {
 
         const videoId = new URLSearchParams(new URL(tab.url).search).get('v');
         
-        const button = document.getElementById('clipButton');
-        button.textContent = 'Downloading...';
-        button.disabled = true;
+        showProgress();
+
+        // Set up EventSource for progress updates
+        const eventSource = new EventSource(
+            `http://localhost:3000/progress/${videoId}/${startTime}/${endTime}`
+        );
+        
+        eventSource.onmessage = (event) => {
+            const progress = JSON.parse(event.data);
+            updateProgress(progress.percent);
+        };
+
+        eventSource.onerror = () => {
+            eventSource.close();
+        };
 
         const response = await fetch('http://localhost:3000/download', {
             method: 'POST',
@@ -96,6 +135,8 @@ document.getElementById('clipButton').addEventListener('click', async () => {
             })
         });
 
+        eventSource.close();
+
         const data = await response.json();
         if (response.ok) {
             alert('Download completed successfully!');
@@ -107,8 +148,6 @@ document.getElementById('clipButton').addEventListener('click', async () => {
         console.error('Extension error:', error);
         alert('Error: ' + error.message);
     } finally {
-        const button = document.getElementById('clipButton');
-        button.textContent = 'Download Clip';
-        button.disabled = false;
+        hideProgress();
     }
 }); 

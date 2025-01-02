@@ -46,7 +46,6 @@ app.post('/download', async (req, res) => {
     
     const downloadId = getDownloadId(videoId, startTime, endTime);
     
-    // Check if download is already in progress
     if (activeDownloads.has(downloadId)) {
         return res.status(409).json({ error: 'Download already in progress' });
     }
@@ -66,8 +65,6 @@ app.post('/download', async (req, res) => {
             : '--format "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]" --merge-output-format mp4';
             
         const timeRange = `*${startSeconds}-${endSeconds}`;
-        
-        // Include timestamps in filename
         const outputTemplate = `downloads/%(title)s_${startTime}-${endTime}.%(ext)s`;
         
         const command = [
@@ -85,32 +82,59 @@ app.post('/download', async (req, res) => {
         console.log('Format selected:', format);
         console.log('Starting download with command:', command);
         
-        const downloadProcess = exec(command, { maxBuffer: 1024 * 1024 * 10 });
-        
-        // Parse progress from stderr
-        downloadProcess.stderr.on('data', (data) => {
-            const progressMatch = data.toString().match(/(\d+\.?\d*)%/);
-            if (progressMatch && activeDownloads.has(downloadId)) {
-                const progress = parseFloat(progressMatch[1]);
-                activeDownloads.get(downloadId).write(`data: ${JSON.stringify({ percent: progress })}\n\n`);
-            }
+        // Create a promise to handle the download completion
+        const downloadPromise = new Promise((resolve, reject) => {
+            const downloadProcess = exec(command, { maxBuffer: 1024 * 1024 * 10 });
+            
+            let downloadOutput = '';
+            let errorOutput = '';
+            
+            downloadProcess.stdout.on('data', (data) => {
+                downloadOutput += data;
+            });
+            
+            downloadProcess.stderr.on('data', (data) => {
+                errorOutput += data;
+                const progressMatch = data.toString().match(/(\d+\.?\d*)%/);
+                if (progressMatch && activeDownloads.has(downloadId)) {
+                    const progress = parseFloat(progressMatch[1]);
+                    activeDownloads.get(downloadId).write(`data: ${JSON.stringify({ percent: progress })}\n\n`);
+                }
+            });
+            
+            downloadProcess.on('error', (error) => {
+                reject({ error, downloadOutput, errorOutput });
+            });
+            
+            downloadProcess.on('exit', (code) => {
+                if (code === 0) {
+                    resolve({ downloadOutput, errorOutput });
+                } else {
+                    reject({ error: `Process exited with code ${code}`, downloadOutput, errorOutput });
+                }
+                
+                if (activeDownloads.has(downloadId)) {
+                    const res = activeDownloads.get(downloadId);
+                    res.write(`data: ${JSON.stringify({ percent: 100 })}\n\n`);
+                    res.end();
+                    activeDownloads.delete(downloadId);
+                }
+            });
         });
         
-        downloadProcess.on('exit', (code) => {
-            if (activeDownloads.has(downloadId)) {
-                const res = activeDownloads.get(downloadId);
-                res.write(`data: ${JSON.stringify({ percent: 100 })}\n\n`);
-                res.end();
-                activeDownloads.delete(downloadId);
-            }
+        // Wait for download to complete before sending response
+        const result = await downloadPromise;
+        res.json({ 
+            message: 'Download completed successfully',
+            details: result
         });
-        
-        res.json({ message: 'Download started' });
         
     } catch (error) {
         console.error('Server error:', error);
-        res.status(500).json({ error: 'Server error: ' + error.message });
-        // Clean up on error
+        res.status(500).json({ 
+            error: 'Download failed', 
+            details: error 
+        });
         activeDownloads.delete(downloadId);
     }
 });

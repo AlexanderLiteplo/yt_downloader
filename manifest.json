@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Clipper",
+  "version": "1.0",
+  "description": "Clip and download YouTube videos",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "http://localhost:3000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+} 

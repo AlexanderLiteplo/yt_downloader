@@ -1,5 +1,11 @@
 # 🌸 YouTube Clipper Setup Guide 🌸
 
+## 📦 Quick Setup
+Run this command to automatically install everything and start the server:
+bash
+```./setup.sh```
+
+Or if you prefer to set things up manually, follow these steps:
 ## 📦 Requirements to Install
 1. 🟢 Node.js - download from https://nodejs.org/
 2. 🎬 FFmpeg - run: `brew install ffmpeg`
